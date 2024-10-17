@@ -1,0 +1,114 @@
+import requests
+import pandas as pd
+import streamlit as st
+import matplotlib.pyplot as plt
+from textblob import TextBlob
+import time
+
+# Function to interact with Hugging Face API for GPT-3 response
+def get_gpt3_response(prompt):
+    api_key = "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"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_new_tokens": 150,
+            "temperature": 0.7,
+            "top_p": 0.9
+        }
+    }
+
+    for _ in range(3):  # Retry up to 3 times
+        response = requests.post("https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium", headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            result = response.json()
+            # Debugging: Print the entire response to check its structure
+            print("API Response:", result)  # This will log the response in the console
+            if result and isinstance(result, dict) and "generated_text" in result:
+                return result["generated_text"]
+            elif result and isinstance(result, list) and "generated_text" in result[0]:
+                return result[0]["generated_text"]
+            else:
+                return f"Error: Unexpected response format. Response: {result}"
+        elif response.status_code == 503:
+            st.write("Model is loading, please wait...")
+            time.sleep(10)  # Wait for 10 seconds before retrying
+        else:
+            st.write(f"Error: {response.status_code}, {response.text}")
+            return f"Error: {response.status_code}, {response.text}"
+    
+    return "Error: Model is still loading after multiple attempts."
+
+# Function to perform sentiment analysis
+def analyze_sentiment(text):
+    analysis = TextBlob(text)
+    polarity = analysis.sentiment.polarity
+
+    if polarity > 0:
+        return "Positive"
+    elif polarity < 0:
+        return "Negative"
+    else:
+        return "Neutral"
+
+# Function to generate a report with data visualization
+def generate_report(data):
+    if len(data) == 0:
+        st.write("No data available for report generation.")
+        return
+
+    # Convert data to a DataFrame
+    df = pd.DataFrame(data)
+
+    # Count the occurrences of each sentiment
+    sentiment_counts = df["Sentiment"].value_counts()
+
+    # Plot the sentiment distribution as a bar chart
+    fig, ax = plt.subplots()
+    sentiment_counts.plot(kind='bar', ax=ax, color=['green', 'red', 'blue'])
+    plt.title('Sentiment Distribution')
+    plt.xlabel('Sentiment')
+    plt.ylabel('Count')
+    st.pyplot(fig)
+
+    # Display the DataFrame as a table
+    st.write("Conversation Data:")
+    st.write(df)
+
+# Initialize Streamlit app
+def main():
+    st.title("Interactive Chat and Sentiment Analysis")
+    st.write("Enter text below to start the conversation:")
+
+    # Initialize session state for conversation data
+    if "conversation_data" not in st.session_state:
+        st.session_state["conversation_data"] = []
+
+    # Chat interface
+    user_input = st.text_input("Your message:")
+
+    if user_input:
+        # Generate response using Hugging Face GPT-3
+        response = get_gpt3_response(user_input)
+        st.write(f"AI Response: {response}")
+
+        # Perform sentiment analysis on the response
+        sentiment = analyze_sentiment(response)
+        st.write(f"Sentiment: {sentiment}")
+
+        # Append the conversation details to the data list
+        conversation_data = {
+            "User Input": user_input,
+            "AI Response": response,
+            "Sentiment": sentiment
+        }
+        st.session_state["conversation_data"].append(conversation_data)
+
+    # Button to generate the report and visualizations
+    if st.button("Generate Report"):
+        generate_report(st.session_state["conversation_data"])
+
+# Run the Streamlit application
+if __name__ == "__main__":
+    main()
